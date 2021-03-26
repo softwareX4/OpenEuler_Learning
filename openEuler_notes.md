@@ -379,4 +379,4 @@ source ~/.bash_profile
 
 
 ## 构建LFS交叉⼯具链和临时⼯具
-cc
+
