@@ -379,4 +379,120 @@ source ~/.bash_profile
 
 
 ## 构建LFS交叉⼯具链和临时⼯具
+- 构建⼀个**交叉编译器**和与之相关的**库**
+- 使⽤这个交叉⼯具链构建⼀些**⼯具**，构建⽅法保证它们和宿主系统**分离**
+- 进⼊ **chroot** 环境，以进⼀步提⾼与宿主的隔离度，并构建剩余的，在构建最终的系统时必须的**⼯具**
+![](.img/build/tip.png)
 
+###  Binutils-2.35 - 第⼀遍
+首先切到lfs身份，解压binutils包，进入目录。
+```sh
+su - lfs
+tar -xvf binutils-2.35.tar.xz
+cd binutils-2.35
+```
+
+编译
+```sh
+../configure --prefix=$LFS/tools \
+ --with-sysroot=$LFS \
+ --target=$LFS_TGT \
+ --disable-nls \
+ --disable-werror
+
+ make
+
+ make install
+ ```
+
+ ![](.img/build/binmake.png)
+ ![](.img/build/binmakeinstall.png)
+切换回包含所有源码包的目录并删除解压出来的目录。
+```sh
+cd ../../
+rm -rf binutils-2.35
+```
+ ### GCC-10.2.0 - 第⼀遍
+GCC 依赖于 GMP、MPFR 和 MPC 这三个包。
+解压GCC，进入目录，分别解压三个包：
+```sh
+tar -xvf gcc-10.2.0.tar.xz
+cd gcc-10.2.0
+
+tar -xf ../mpfr-4.1.0.tar.xz
+mv -v mpfr-4.1.0 mpfr
+tar -xf ../gmp-6.2.0.tar.xz
+mv -v gmp-6.2.0 gmp
+tar -xf ../mpc-1.1.0.tar.gz
+mv -v mpc-1.1.0 mpc
+```
+
+x86_64设置64位库默认目录:
+```sh
+case $(uname -m) in
+ x86_64)
+ sed -e '/m64=/s/lib64/lib/' \
+ -i.orig gcc/config/i386/t-linux64
+ ;;
+esac
+```
+创建build目录
+```sh
+mkdir -v build
+cd build
+```
+
+准备编译：
+```sh
+../configure \
+ --target=$LFS_TGT \
+ --prefix=$LFS/tools \
+ --with-glibc-version=2.11 \
+ --with-sysroot=$LFS \
+ --with-newlib \
+ --without-headers \
+ --enable-initfini-array \
+ --disable-nls \
+ --disable-shared \
+ --disable-multilib \
+ --disable-decimal-float \
+ --disable-threads \
+ --disable-libatomic \
+ --disable-libgomp \
+ --disable-libquadmath \
+ --disable-libssp \
+ --disable-libvtv \
+ --disable-libstdcxx \
+ --enable-languages=c,c++
+ ```
+
+make
+
+![](.img/build/gccmake.png)
+
+make install
+
+![](.img/build/gccmakeinstall.png)
+
+创建完整版本的内部头文件：
+```sh
+cd ..
+cat gcc/limitx.h gcc/glimits.h gcc/limity.h > \
+ `dirname $($LFS_TGT-gcc -print-libgcc-file-name)`/install-tools/include/limits.h
+```
+
+
+### Linux-5.8.5 API 头⽂件
+解压，进入目录，检查软件包中没有遗留的旧文件。
+```sh
+tar -xvf linux-5.8.3.tar.xz
+cd linux-5.8.3
+make mrproper
+```
+从源代码中提取用户可见的头文件。
+```sh
+make headers
+find usr/include -name '.*' -delete
+rm usr/include/Makefile
+cp -rv usr/include $LFS/usr
+```
