@@ -496,3 +496,225 @@ find usr/include -name '.*' -delete
 rm usr/include/Makefile
 cp -rv usr/include $LFS/usr
 ```
+删除目录。
+### Glibc-2.32
+解压，进入目录。
+创建一个LSB兼容性符号链接
+```sh
+case $(uname -m) in
+ i?86) ln -sfv ld-linux.so.2 $LFS/lib/ld-lsb.so.3
+ ;;
+ x86_64) ln -sfv ../lib/ld-linux-x86-64.so.2 $LFS/lib64
+ ln -sfv ../lib/ld-linux-x86-64.so.2 $LFS/lib64/ld-lsb-x86-64.so.3
+ ;;
+esac
+
+```
+
+```sh
+patch -Np1 -i ../glibc-2.32-fhs-1.patch
+mkdir -v build
+cd build
+
+```
+
+准备编译：
+```sh
+../configure \
+ --prefix=/usr \
+ --host=$LFS_TGT \
+ --build=$(../scripts/config.guess) \
+ --enable-kernel=3.2 \
+ --with-headers=$LFS/usr/include \
+ libc_cv_slibdir=/lib
+ ```
+ 这里出错：These critical programs are missing or too old: bison
+ 检查 bison --version，出现bison:command not found
+ 检查 whereis bison，发现在/usr/bin下的bison不是需要的文件，真正的bison在/usr/local/bin下，于是复制过来，再次准备编译，成功。
+
+ ```sh
+ make
+ make install
+ ```
+
+
+ 完整性检查：
+ ```sh
+ echo 'int main(){}' > dummy.c
+$LFS_TGT-gcc dummy.c
+readelf -l a.out | grep '/ld-linux'
+```
+
+![](.img/build/check.png)
+
+清理测试文件
+```sh
+rm -v dummy.c a.out
+```
+
+
+### GCC-10.2.0 中的 Libstdc++，第⼀遍
+解压，进入目录，创建工作目录，准备编译
+```sh
+../libstdc++-v3/configure \
+ --host=$LFS_TGT \
+ --build=$(../config.guess) \
+ --prefix=/usr \
+ --disable-multilib \
+ --disable-nls \
+ --disable-libstdcxx-pch \
+ --with-gxx-include-dir=/tools/$LFS_TGT/include/c++/10.2.0
+ ```
+
+ make 
+ make DESTDIR=$LFS install
+
+## 第 6 章 交叉编译临时⼯具
+
+### M4-1.4.18
+进⾏ glibc-2.28 要求的⼀些修补：
+```sh
+sed -i 's/IO_ftrylockfile/IO_EOF_SEEN/' lib/*.c
+echo "#define _IO_IN_BACKUP 0x100" >> lib/stdio-impl.h
+```
+准备编译
+```sh
+./configure --prefix=/usr \
+ --host=$LFS_TGT \
+ --build=$(build-aux/config.guess)
+```
+
+make
+make DESTDIR=$LFS install
+
+### Ncurses-6.2
+保证能找到gawk命令
+```sh
+sed -i s/mawk// configure
+```
+构建"tic"程序
+```sh
+mkdir build
+pushd build
+ ../configure
+ make -C include
+ make -C progs tic
+popd
+```
+
+准备编译
+```sh
+./configure --prefix=/usr \
+ --host=$LFS_TGT \
+ --build=$(./config.guess) \
+ --mandir=/usr/share/man \
+ --with-manpage-format=normal \
+ --with-shared \
+ --without-debug \
+ --without-ada \
+ --without-normal \
+ --enable-widec
+ ```
+编译安装
+```sh
+ make 
+ make DESTDIR=$LFS TIC_PATH=$(pwd)/build/progs/tic install
+echo "INPUT(-lncursesw)" > $LFS/usr/lib/libncurses.so
+```
+将共享库移动到/lib
+```sh
+mv -v $LFS/usr/lib/libncursesw.so.6* $LFS/lib
+```
+生成符号链接
+```sh
+ln -sfv ../../lib/$(readlink $LFS/usr/lib/libncursesw.so) $LFS/usr/lib/libncursesw.so
+```
+
+### Bash-5.0
+准备编译
+```sh
+./configure --prefix=/usr \
+ --build=$(support/config.guess) \
+ --host=$LFS_TGT \
+ --without-bash-malloc
+ ```
+ 编译
+ ```sh
+ make
+ ```
+ 出现错误
+
+ ![](.img/build/lcurses.png)
+
+ 应该是缺少符号链接，建立一个：
+
+```sh
+ ln -sfv $(readlink $LFS/usr/lib/libncursesw.so) $LFS/usr/lib/libcurses.so
+```
+
+![](.img/build/ln.png)
+成功。
+安装
+ ```sh
+ make DESTDIR=$LFS install
+ ```
+ 移动
+```sh
+mv $LFS/usr/bin/bash $LFS/bin/bash
+```
+
+ 创建链接
+
+```sh
+ln -sv bash $LFS/bin/sh
+```
+> 下面只记录出现问题的地方，照着手册做就行
+
+
+### File-5.39
+解压出现错误
+![](.img/build/gzip.png)
+说明文件损坏了，重新下载一个。
+
+
+## 进⼊ Chroot 并构建其他临时⼯具
+以root身份执行
+```sh
+mkdir -pv $LFS/{dev,proc,sys,run}
+
+mknod -m 600 $LFS/dev/console c 5 1
+mknod -m 666 $LFS/dev/null c 1 3
+
+mount -v --bind /dev $LFS/dev
+
+mount -v --bind /dev/pts $LFS/dev/pts
+mount -vt proc proc $LFS/proc
+mount -vt sysfs sysfs $LFS/sys
+mount -vt tmpfs tmpfs $LFS/run
+
+
+if [ -h $LFS/dev/shm ]; then
+ mkdir -pv $LFS/$(readlink $LFS/dev/shm)
+fi
+
+
+chroot "$LFS" /usr/bin/env -i \
+ HOME=/root \
+ TERM="$TERM" \
+ PS1='(lfs chroot) \u:\w\$ ' \
+ PATH=/bin:/usr/bin:/sbin:/usr/sbin \
+ /bin/bash --login +h
+```
+
+
+退出chroot
+```sh
+exit
+umount $LFS/dev{/pts,}
+umount $LFS/{sys,proc,run}
+
+```
+
+
+## 构建LFS系统
+在chroot环境下
