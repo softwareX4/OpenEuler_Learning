@@ -715,6 +715,224 @@ umount $LFS/{sys,proc,run}
 
 ```
 
+创建一个test用户
+```sh
+echo "tester:x:$(ls -n $(tty) | cut -d" " -f3):101::/home/tester:/bin/bash" >> /etc/passwd
+echo "tester:x:101:" >> /etc/group
+install -o tester -d /home/tester
+```
+
 
 ## 构建LFS系统
-在chroot环境下
+注意在chroot环境下。
+安装软件包make check有时候会出错，但是install没有问题，暂且忽略。
+
+### 清理系统
+从现在起，在退出并重新进⼊ chroot 环境时，要使⽤下⾯的修改过的 chroot 命令：
+```sh
+mkdir -pv $LFS/{dev,proc,sys,run}
+
+mknod -m 600 $LFS/dev/console c 5 1
+mknod -m 666 $LFS/dev/null c 1 3
+
+mount -v --bind /dev $LFS/dev
+
+mount -v --bind /dev/pts $LFS/dev/pts
+mount -vt proc proc $LFS/proc
+mount -vt sysfs sysfs $LFS/sys
+mount -vt tmpfs tmpfs $LFS/run
+
+
+if [ -h $LFS/dev/shm ]; then
+ mkdir -pv $LFS/$(readlink $LFS/dev/shm)
+fi
+chroot "$LFS" /usr/bin/env -i \
+ HOME=/root TERM="$TERM" \
+ PS1='(lfs chroot) \u:\w\$ ' \
+ PATH=/bin:/usr/bin:/sbin:/usr/sbin \
+ /bin/bash --login
+```
+
+### 系统配置
+#### 引导linux系统
+引导过程必须
+- 挂载虚拟和真实⽂件系统
+- 初始化设备
+- 启⽤交换
+- 检查⽂件系统完整性
+- 挂载所有交换分区或⽂件
+- 设定系统时钟
+- 启⽤⽹络
+- 启动系统需要的守护进程
+- 并完成⽤⼾⾃定义的其他⼯作
+
+
+#### SystemV
+  - Unix 和 Linux 等类 Unix 系统中被⼴泛应⽤的经典引导过程。
+  - 包含⼀个小程序 init，设定 login (通过 getty)并运⾏⼀个脚本。该脚本⼀般被命名为 rc，控制⼀组附加脚本的运⾏，这些附加脚本完成初始化系统需要的各项⼯作。
+init 程序受到 <code>/etc/inittab</code> ⽂件的控制，被组织为用户可以选择的系统运⾏级别：
+<pre lang="text">
+<code>
+0 — 停⽌运⾏
+1 — 单⽤⼾模式
+2 — 多⽤⼾模式，没有⽹络
+3 — 完整的多⽤⼾模式
+4 — ⽤⼾⾃定义模式
+5 — 拥有显⽰管理器的完整多⽤⼾模式
+6 — 重启系统
+</code>
+</pre>
+通常的默认运⾏级别是 3 或 5。
+- 优点
+  - 完备的，已经被详细理解的系统。
+  - 容易定制。
+- 缺点
+  - 引导速度较慢。⼀个中等速度的基本 LFS 系统从第⼀个内核消息开始，到出现登录提⽰符为⽌，需要8-12 秒的引导时间，之后还需要约 2 秒启动⽹络连接。
+  - 串⾏执⾏引导任务，这与前⼀项缺点相关。引导过程中的延迟 (如⽂件系统检查) 会拖延整个引导过程。
+  - 不⽀持控制组 (cgroups)、每用户公平共享调度等⾼级特性。
+  - 添加脚本时，需要⼿动决定它在引导过程中的次序。
+
+#### 设备和模块管理
+- 传统的 Linux 系统
+通常使⽤**静态**地创建设备，即在 /dev 下创建⼤量设备节点 (有时有数千个节点)，⽆论对应的硬件设备**是否真的存在**。
+⼀般通过 MAKEDEV 脚本完成这⼀⼯作，它包含以相关的主设备号和次设备号，为世界上可能存在的每个设备建⽴节点的⼤量 mknod 命令。
+- 使⽤ Udev
+只有那些**被内核检测到的设备**才会获得为它们创建的设备节点。由于这些设备节点在每次引导系统时都会重新创建，它们被储存在 devtmpfs ⽂件系统中 (⼀个虚拟⽂件系统，完全驻留在系统内存)。
+
+##### Sysfs
+sysfs 的⼯作是将系统硬件配置信息导出给用户空间进程，用户空间可⻅的配置描述。
+- 编译到**内核**中的驱动程序在它们的对象被内核检测到时，直接将它们注册到 sysfs (内部的 devtmpfs)。
+- 被编译为**模块**的驱动程序，注册过程在模块**加载**时进⾏。
+只要 sysfs ⽂件系统被挂载好 (位于 /sys)，用户空间程序即可使⽤驱动程序注册在 sysfs 中的数据，Udev就能够使⽤这些数据对设备进⾏处理 (包括修改设备节点)。
+
+
+####  设备管理
+```sh
+bash /lib/udev/init-net-rules.sh
+cat /etc/udev/rules.d/70-persistent-net.rules
+```
+没有70-persistent-net.rules这个文件。。
+
+![](.img/build/70.png)
+
+
+#### 一般网络配置
+配置域名服务（用Google公用DNS服务IP地址）
+```sh
+cat > /etc/resolv.conf << "EOF"
+ # Begin /etc/resolv.conf
+ nameserver  8.8.8.8
+ nameserver 8.8.4.4
+ # End /etc/resolv.conf
+ EOF
+```
+
+配置主机名
+```sh
+echo "lfs" > /etc/hostname
+```
+
+⾃定义 /etc/hosts ⽂件
+
+```sh
+cat > /etc/hosts << "EOF"
+# Begin /etc/hosts
+127.0.0.1 localhost.localdomain localhost
+192.168.1.1 localhost.localdomain lfs
+::1 localhost ip6-localhost ip6-loopback
+ff02::1 ip6-allnodes
+ff02::2 ip6-allrouters
+# End /etc/hosts
+EOF
+```
+
+#### System V 引导脚本使⽤与配置
+
+配置sysvinit
+```sh
+cat > /etc/inittab << "EOF"
+# Begin /etc/inittab
+id:3:initdefault:
+si::sysinit:/etc/rc.d/init.d/rc S
+l0:0:wait:/etc/rc.d/init.d/rc 0
+l1:S1:wait:/etc/rc.d/init.d/rc 1
+l2:2:wait:/etc/rc.d/init.d/rc 2
+l3:3:wait:/etc/rc.d/init.d/rc 3
+l4:4:wait:/etc/rc.d/init.d/rc 4
+l5:5:wait:/etc/rc.d/init.d/rc 5
+l6:6:wait:/etc/rc.d/init.d/rc 6
+ca:12345:ctrlaltdel:/sbin/shutdown -t1 -a -r now
+su:S016:once:/sbin/sulogin
+1:2345:respawn:/sbin/agetty --noclear tty1 9600
+2:2345:respawn:/sbin/agetty tty2 9600
+3:2345:respawn:/sbin/agetty tty3 9600
+4:2345:respawn:/sbin/agetty tty4 9600
+5:2345:respawn:/sbin/agetty tty5 9600
+6:2345:respawn:/sbin/agetty tty6 9600
+# End /etc/inittab
+EOF
+```
+
+#### 配置系统时钟
+查看是否为UTC
+```sh
+hwclock --localtime --show
+```
+
+![](.img/build/utc.png)
+
+```sh
+cat > /etc/sysconfig/clock << "EOF"
+# Begin /etc/sysconfig/clock
+UTC=1
+# Set this to any options you might need to give to hwclock,
+# such as machine hardware clock type for Alphas.
+CLOCKPARAMS=
+# End /etc/sysconfig/clock
+EOF
+```
+
+测试locale
+```sh
+LC_ALL=zh_CN.gb18030 locale charmap
+LC_ALL=zh_CN.gb18030 locale language
+LC_ALL=zh_CN.gb18030 locale int_curr_symbol
+LC_ALL=zh_CN.gb18030 locale  int_prefix
+
+```
+
+![](.img/build/locale.png)
+
+创建/etc/profile文件
+```sh
+cat > /etc/profile << "EOF"
+# Begin /etc/profile
+export LANG=zh_CN.gb18030
+# End /etc/profile
+EOF
+```
+创建/etc/inputrc文件：与手册相同
+创建 /etc/shells ⽂件：与手册相同
+
+### 使lfs系统可引导
+查看分区情况
+
+![](.img/build/lsblk.png)
+
+```sh
+cat > /etc/fstab << "EOF"
+/dev/sdb1 / ext4 defaults 1 1
+/dev/sdb2 swap swap pri=1 0 0
+proc /proc proc nosuid,noexec,nodev 0 0
+sysfs /sys sysfs nosuid,noexec,nodev 0 0
+devpts /dev/pts devpts gid=5,mode=620 0 0
+tmpfs /run tmpfs defaults 0 0
+devtmpfs /dev devtmpfs mode=0755,nosuid 0 0
+# End /etc/fstab
+EOF
+
+```
+
+
+
+
