@@ -1,6 +1,6 @@
 # OpenEuler && LFS学习笔记
 [TOC]
-- [OpenEuler && LFS学习笔记](#openeuler----lfs----)
+- [OpenEuler && LFS学习笔记](#openeuler-&&-lfs学习笔记)
   * [环境](#环境)
   * [安装OpenEuler](#安装openeuler)
     + [配置静态IP](#配置静态ip)
@@ -15,6 +15,32 @@
     + [软件包和补丁](#软件包和补丁)
     + [最后的准备工作](#最后的准备工作)
   * [构建LFS交叉⼯具链和临时⼯具](#构建lfs交叉⼯具链和临时⼯具)
+    + [Binutils-2.35第⼀遍](#binutils-235第⼀遍)
+    + [GCC-10.2.0第⼀遍](#gcc-1020第⼀遍)
+    + [Linux-5.8.5 API 头⽂件](#linux-585-api-头⽂件)
+    + [Glibc-2.32](#glibc-232)
+    + [GCC-10.2.0 中的 Libstdc++，第⼀遍](#gcc-1020中的libstdc++,第⼀遍)
+  * [第 6 章 交叉编译临时⼯具](#第6章-交叉编译临时⼯具)
+    + [M4-1.4.18](#m4-1418)
+    + [Ncurses-6.2](#ncurses-62)
+    + [Bash-5.0](#bash-50)
+    + [File-5.39](#file-539)
+  * [进⼊ Chroot 并构建其他临时⼯具](#进⼊chroot并构建其他临时⼯具)
+  * [构建LFS系统](#构建lfs系统)
+    + [清理系统](#清理系统)
+    + [系统配置](#系统配置)
+      - [引导linux系统](#引导linu系统)
+      - [SystemV](#systemv)
+      - [设备和模块管理](#设备和模块管理)
+        * [Sysfs](#sysfs)
+      - [设备管理](#设备管理)
+      - [一般网络配置](#一般网络配置)
+      - [System V 引导脚本使⽤与配置](#systemv引导脚本使⽤与配置)
+      - [配置系统时钟](#配置系统时钟)
+    + [使lfs系统可引导](#使lfs系统可引导)
+      - [Linux 5.8.3](#linux583)
+      - [使⽤ GRUB 设定引导过程](#使⽤grub设定引导过程)
+
 
 
 ## 环境
@@ -384,7 +410,7 @@ source ~/.bash_profile
 - 进⼊ **chroot** 环境，以进⼀步提⾼与宿主的隔离度，并构建剩余的，在构建最终的系统时必须的**⼯具**
 ![](.img/build/tip.png)
 
-###  Binutils-2.35 - 第⼀遍
+###  Binutils-2.35第⼀遍
 首先切到lfs身份，解压binutils包，进入目录。
 ```sh
 su - lfs
@@ -412,7 +438,7 @@ cd binutils-2.35
 cd ../../
 rm -rf binutils-2.35
 ```
- ### GCC-10.2.0 - 第⼀遍
+ ### GCC-10.2.0第⼀遍
 GCC 依赖于 GMP、MPFR 和 MPC 这三个包。
 解压GCC，进入目录，分别解压三个包：
 ```sh
@@ -482,7 +508,7 @@ cat gcc/limitx.h gcc/glimits.h gcc/limity.h > \
 ```
 
 
-### Linux-5.8.5 API 头⽂件
+### Linux-5.8.5API头⽂件
 解压，进入目录，检查软件包中没有遗留的旧文件。
 ```sh
 tar -xvf linux-5.8.3.tar.xz
@@ -553,7 +579,7 @@ rm -v dummy.c a.out
 ```
 
 
-### GCC-10.2.0 中的 Libstdc++，第⼀遍
+### GCC-10.2.0中的Libstdc++第⼀遍
 解压，进入目录，创建工作目录，准备编译
 ```sh
 ../libstdc++-v3/configure \
@@ -677,7 +703,7 @@ ln -sv bash $LFS/bin/sh
 说明文件损坏了，重新下载一个。
 
 
-## 进⼊ Chroot 并构建其他临时⼯具
+## 进⼊Chroot并构建其他临时⼯具
 以root身份执行
 ```sh
 mkdir -pv $LFS/{dev,proc,sys,run}
@@ -806,7 +832,7 @@ sysfs 的⼯作是将系统硬件配置信息导出给用户空间进程，用�
 只要 sysfs ⽂件系统被挂载好 (位于 /sys)，用户空间程序即可使⽤驱动程序注册在 sysfs 中的数据，Udev就能够使⽤这些数据对设备进⾏处理 (包括修改设备节点)。
 
 
-####  设备管理
+#### 设备管理
 ```sh
 bash /lib/udev/init-net-rules.sh
 cat /etc/udev/rules.d/70-persistent-net.rules
@@ -846,7 +872,7 @@ ff02::2 ip6-allrouters
 EOF
 ```
 
-#### System V 引导脚本使⽤与配置
+#### SystemV引导脚本使⽤与配置
 
 配置sysvinit
 ```sh
@@ -919,6 +945,8 @@ EOF
 
 ![](.img/build/lsblk.png)
 
+创建 /etc/fstab ⽂件
+
 ```sh
 cat > /etc/fstab << "EOF"
 /dev/sdb1 / ext4 defaults 1 1
@@ -933,6 +961,84 @@ EOF
 
 ```
 
+#### Linux5.8.3
+准备编译：
+make mrproper
+通过目录驱动界面：
+make menuconfig
+
+![](.img/config/linux1.png)
+
+按照手册的配置。我这里没有改动，默认跟手册的一致。
+
+编译内核映像和模块make
+
+#### 使⽤GRUB设定引导过程
+查看/etc/fstab，lfs装在sdb1上
+```sh
+vim /etc/fstab
+```
+
+<pre lang="text">
+<code>
+/dev/mapper/openeuler-root /                       ext4    defaults        1 1
+UUID=5499aca1-20b9-474a-a0c6-d8e14ea57a0c /boot                   ext4    defaults        1 2
+/dev/mapper/openeuler-swap none                    swap    defaults        0 0
+/dev/sdb1 /mnt/lfs                                 ext4    defaults        1 1
+</code>
+</pre>
+
+blkid查看分区ID，sdb1为<code>3c786363-6016-4cf9-b7cc-1d67dd2cf31e</code>
+
+<pre lang="text">
+<code>
+/dev/sda1: UUID="5499aca1-20b9-474a-a0c6-d8e14ea57a0c" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="98455140-01"
+/dev/sda2: UUID="FmlpoF-Wtlt-x2NJ-6Xp5-2eX8-Bh0C-Cdsc9H" TYPE="LVM2_member" PARTUUID="98455140-02"
+/dev/sdb1: UUID="3c786363-6016-4cf9-b7cc-1d67dd2cf31e" BLOCK_SIZE="4096" TYPE="ext4" PARTUUID="eccb9e74-615e-7248-9ec2-12653a7dc164"
+/dev/sdb2: UUID="86cbc116-4552-43a5-8c97-cb06f8a2aa5e" TYPE="swap" PARTUUID="fcb97f5e-fc76-6e4e-b80d-976bb2549312"
+/dev/mapper/openeuler-root: UUID="9ec7601e-b6cd-458b-909d-4f4ca0952877" BLOCK_SIZE="4096" TYPE="ext4"
+/dev/mapper/openeuler-swap: UUID="0b04a791-a29d-47dc-af45-50e353f2f087" TYPE="swap"
+</code>
+</pre>
+
+将 GRUB ⽂件安装到/boot/grub 并设定引导磁道：
+```sh
+grub-install /dev/sdb
+```
+可能会出现如下错误：
+
+![](.img/config/force.png)
+
+加上--force参数：
+```sh
+grub-install --force /dev/sdb
+```
+成功：
 
 
+![](.img/config/grub-install.png)
 
+⾃动创建配置⽂件
+
+```sh
+grub-mkconfig
+```
+
+退出chroot，把grub-mkconfig生成文件的menuentry的部分复制到/boot/grub2/grub.cfg下，修改对应位置为sdb1机器id，还有分区号.例如下图中root在sdb1，和其分区号对应，并且set root处也要做对应修改。
+
+![](.img/config/menu.png)
+
+![](.img/config/name.png)
+
+
+重启,进入引导,出现错误:
+
+![](.img/config/error.png)
+
+这里是linux内核编译少了组件，重新进入linux包，在menuconfig里把 http://www.linuxfromscratch.org/~krejzi/basic-kernel.txt 的配置信息都勾选，重新安装linux。
+
+安装完成后，再次重启系统，成功：
+
+![](.img/config/grub.png)
+
+![](.img/config/success.png)
