@@ -13,9 +13,10 @@
 #### 容器和虚拟机
 虚拟机通过**操作系统**实现隔离，容器通过**隔离应用程序的运行时环境**（依赖的库和配置），但共享一个操作系统。
 
-![](.img/vm.jpg)![](.img/docker.jpg)
+![](.img/vm.jpg)
+![](.img/docker.jpg)
 
-容器轻量级且占用资源更少
+容器轻量级且占用资源更少.多个虚拟机使用多个操作系统内核，而多个容器共享宿主机操作系统内核。
 
 
 ## 概念
@@ -30,6 +31,181 @@ Docker引擎利用容器来运行、隔离各个应用。容器是镜像创建�
 > 注意：镜像本身是只读的，容器从镜像启动时，Docker在镜像的上层创建一个**可写层**，镜像本身不变。
 - 仓库Repository
 类似于代码仓库，这里是镜像仓库，是Docker用来**集中存放镜像文件**的地方。注意与注册服务器（Registry）的区别：注册服务器是存放仓库的地方，一般会有多个仓库；而仓库是存放镜像的地方，一般每个仓库存放一类镜像，每个镜像利用tag进行区分，比如Ubuntu仓库存放有多个版本（12.04、14.04等）的Ubuntu镜像。
+
+
+### CentOS 7安装
+
+安装docker
+```sh
+yum install -y docker
+```
+
+启动docker
+```sh
+systemctl start docker
+systemctl enable docker
+systemctl status docker
+```
+
+![](.img/start.png)
+
+配置镜像加速
+```sh
+mkdir -p /etc/docker
+
+tee /etc/docker/daemon.json <<-'EOF'
+{
+  "registry-mirrors": [
+  			"https://mirror.ccs.tencentyun.com",
+		  	"https://hub-mirror.c.163.com",
+			"https://mirror.baidubce.com"
+		]
+}
+EOF
+
+systemctl daemon-reload
+systemctl restart docker
+```
+
+#### 安装hadoop2.8.5集群
+下载jdk和hadoop安装包到/opt/hadoop_docker/tools
+
+![](.img/jdk.png)
+
+一些用于创建镜像、启动和停止容器的脚本：
+
+![](.img/hadoop.png)
+
+Dockerfile内容：
+
+<pre lang="txt">
+<code>
+
+FROM centos:7
+MAINTAINER WANGChuwei  chu@stu.pku.edu.cn
+
+LABEL Discription="hadoop base of centos7" version="1.0"
+
+#安装必备的软件包
+RUN yum -y install net-tools
+RUN yum -y install which
+RUN yum -y install openssh-server openssh-clients
+RUN yum clean all
+
+#配置SSH免密登录
+RUN ssh-keygen -q -t rsa -b 2048 -f /etc/ssh/ssh_host_rsa_key -N ''
+RUN ssh-keygen -q -t ecdsa -f /etc/ssh/ssh_host_ecdsa_key -N ''
+RUN ssh-keygen -q -t dsa -f /etc/ssh/ssh_host_ed25519_key  -N ''
+RUN ssh-keygen -f /root/.ssh/id_rsa -N ''
+RUN touch /root/.ssh/authorized_keys
+RUN cat /root/.ssh/id_rsa.pub >> /root/.ssh/authorized_keys
+RUN echo "root:mypassword" | chpasswd
+COPY ./configs/ssh_config /etc/ssh/ssh_config
+
+#添加JDK 增加JAVA_HOME环境变量
+ADD ./tools/jdk-8u212-linux-x64.tar.gz /usr/local/
+ENV JAVA_HOME /usr/local/jdk1.8.0_212/
+ENV CLASSPATH $JAVA_HOME/lib/dt.jar:$JAVA_HOME/lib/tools.jar
+
+#添加Hadoop并设置环境变量
+ADD ./tools/hadoop-2.8.5.tar.gz /usr/local
+ENV HADOOP_HOME /usr/local/hadoop-2.8.5
+
+#将环境变量添加到系统变量中
+ENV PATH $HADOOP_HOME/bin:$JAVA_HOME/bin:$PATH
+
+#拷贝Hadoop相关的配置文件到镜像中
+COPY ./configs/hadoop-env.sh $HADOOP_HOME/etc/hadoop/hadoop-env.sh
+COPY ./configs/hdfs-site.xml $HADOOP_HOME/etc/hadoop/hdfs-site.xml
+COPY ./configs/core-site.xml $HADOOP_HOME/etc/hadoop/core-site.xml
+COPY ./configs/yarn-site.xml $HADOOP_HOME/etc/hadoop/yarn-site.xml
+COPY ./configs/mapred-site.xml $HADOOP_HOME/etc/hadoop/mapred-site.xml
+COPY ./configs/master $HADOOP_HOME/etc/hadoop/master
+COPY ./configs/slaves $HADOOP_HOME/etc/hadoop/slaves
+COPY ./script/start-hadoop.sh $HADOOP_HOME/start-hadoop.sh
+COPY ./script/restart-hadoop.sh $HADOOP_HOME/restart-hadoop.sh
+
+#增加执行权限
+RUN chmod 700 $HADOOP_HOME/start-hadoop.sh
+RUN chmod 700 $HADOOP_HOME/restart-hadoop.sh
+
+#创建数据目录
+RUN mkdir -p /data/hadoop/dfs/data && \
+    mkdir -p /data/hadoop/dfs/name && \
+    mkdir -p /data/hadoop/tmp
+
+#开启SSH 22 端口
+EXPOSE 22
+
+#启动容器时执行的脚本文件
+CMD ["/usr/sbin/sshd","-D"]
+
+</code>
+</pre>
+
+构建镜像：
+```sh
+# ./build_docker_image.sh
+#!/bin/bash
+echo build centos-hadoop images
+docker build -t="centos-hadoop" .
+```
+构建成功：
+
+![](.img/img.png)
+
+创建Docker网络：
+```sh
+#create_network.sh
+
+#!/bin/bash
+
+echo create network
+docker network create --subnet=172.18.0.0/16 hadoop
+echo create success
+docker network ls
+```
+
+![](.img/net.png)
+
+启动容器
+```sh
+#./start_container.sh
+#!/bin/bash
+
+echo start containers
+
+echo start hadoop-node1 container ...
+docker run -itd --restart=always --net hadoop --ip 172.18.0.2 --privileged -p 18032:8032 -p 28080:18080 -p 29888:19888 -p 17077:7077 -p 51070:50070 -p 18888:8888 -p 19000:9000 -p 11100:11000 -p 51030:50030 -p 18050:8050 -p 18081:8081 -p 18900:8900 --name hadoop-node1 --hostname hadoop-node1  --add-host hadoop-node2:172.18.0.3 --add-host hadoop-node3:172.18.0.4 centos-hadoop /bin/bash
+echo "start hadoop-node2 container..."
+docker run -itd --restart=always --net hadoop  --ip 172.18.0.3 --privileged -p 18042:8042 -p 51010:50010 -p 51020:50020 --name hadoop-node2 --hostname hadoop-node2 --add-host hadoop-node1:172.18.0.2 --add-host hadoop-node3:172.18.0.4 centos-hadoop  /bin/bash
+echo "start hadoop-node3 container..."
+docker run -itd --restart=always --net hadoop  --ip 172.18.0.4 --privileged -p 18043:8042 -p 51011:50011 -p 51021:50021 --name hadoop-node3 --hostname hadoop-node3 --add-host hadoop-node1:172.18.0.2 --add-host hadoop-node2:172.18.0.3  centos-hadoop /bin/bash
+
+sleep 5
+docker exec -it hadoop-node1 /usr/sbin/sshd
+docker exec -it hadoop-node2 /usr/sbin/sshd
+docker exec -it hadoop-node3 /usr/sbin/sshd
+sleep 5
+docker exec -it hadoop-node1 /usr/local/hadoop-2.8.5/start-hadoop.sh
+
+echo finished
+docker ps
+
+```
+
+这里出错了。。。没有解决
+
+![](.img/error.png)
+
+尝试的办法有：修改hosts文件、检查ssh服务
+进入容器发现没有ssh。。yum出错：
+
+![](.img/yumerror.png)
+
+尝试修改yum源--失败、配置DNS--失败
+
+
 
 ### docker工作过程
 > 可以简单的把image理解为可执行程序，container就是运行起来的进程。
@@ -53,7 +229,7 @@ docker daemon从registry下载写好的image到本地
 
 ![](.img/pull.jpg)
 
-### 底层原理
+## 底层原理
 
 ![](.img/tech.png)
 
@@ -112,7 +288,7 @@ Linux 的 CGroup 能够为一组进程分配资源，也就是我们在上面提
 
 > 在 CGroup 中，所有的任务就是一个系统的一个进程，而 CGroup 就是一组按照某种标准划分的进程，在 CGroup 这种机制中，所有的资源控制都是以 CGroup 作为单位实现的，每一个进程都可以随时加入一个 CGroup 也可以随时退出一个 CGroup。
 
-### 相关命令
+## 相关命令
 #### Docker镜像
 镜像是一个Docker的可执行文件，其中包括运行应用程序所需的所有代码内容、依赖库、环境变量和配置文件等。
 **镜像管理**
@@ -147,5 +323,27 @@ Linux 的 CGroup 能够为一组进程分配资源，也就是我们在上面提
 
 
 [Docker网络配置](http://blog.itpub.net/31556785/viewspace-2565390/)
+
+
+### Dockerfile
+Docker 可以通过 Dockerfile 的内容来自动构建镜像。
+Dockerfile 是一个包含创建镜像所有命令的文本文件，通过docker build命令可以根据Dockerfile 的内容构建镜像。
+
+#### 指令
+Dockerfile 有以下指令选项:
+
+FROM
+MAINTAINER
+RUN
+CMD
+EXPOSE
+ENV
+ADD
+COPY
+ENTRYPOINT
+VOLUME
+USER
+WORKDIR
+ONBUILD
 
 
