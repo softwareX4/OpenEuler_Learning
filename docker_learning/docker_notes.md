@@ -1,5 +1,27 @@
 # Docker学习笔记
 [TOC]
+- [Docker学习笔记](#docker学习笔记)
+  * [容器技术](#容器技术)
+    + [起源](#起源)
+    + [容器](#容器)
+      - [容器和虚拟机](#容器和虚拟机)
+  * [概念](#概念)
+    + [定义](#定义)
+    + [CentOS 7安装](#centos-7安装)
+      - [安装hadoop2.8.5集群](#安装hadoop285集群)
+    + [docker工作过程](#docker工作过程)
+  * [底层原理](#底层原理)
+      - [NameSpace](#namespace)
+      - [Control groups](#control-groups)
+  * [相关命令](#相关命令)
+      - [Docker镜像](#docker镜像)
+      - [Docker容器和虚拟机的区别](#docker容器和虚拟机的区别)
+      - [容器的生命周期](#容器的生命周期)
+      - [Docker的容器与镜像关系](#docker的容器与镜像关系)
+      - [镜像构建方式](#镜像构建方式)
+    + [Dockerfile](#dockerfile)
+      - [结构](#结构)
+      - [指令](#指令)
 
 ## 容器技术
 ### 起源
@@ -324,26 +346,70 @@ Linux 的 CGroup 能够为一组进程分配资源，也就是我们在上面提
 
 [Docker网络配置](http://blog.itpub.net/31556785/viewspace-2565390/)
 
+#### 镜像构建方式
+
+![](.img/imglayer.png)
+
+- 从**容器**构建镜像（以下简称容器镜像）
+  - 创建一个容器，比如使用 tomcat:latest 镜像创建一个tomcat-test容器
+  - 修改tomcat-test容器的文件系统，比如修改tomcat的server.xml文件中的默认端口
+  - 使用**commit**命令提交镜像
+- 使用**Dockerfile**构建镜像（以下简称Dockerfile镜像）
+  - 编写Dockerfile文件
+  - 使用**build**命令构建镜像
+
+
+**两种构建方式的区别**
+1. **容器镜像**的构建者可以任意修改容器的文件系统后进行发布，这种修改对于镜像使用者来说是*不透明的*，镜像构建者一般也不会将对容器文件系统的每一步修改，记录进文档中，供镜像使用者参考。
+ **容器镜像**不能（更准确地说是不建议）通过修改，生成新的容器镜像。
+2. 从镜像运行容器，实际上是在镜像顶部上加了一层可写层，所有对容器文件系统的修改，都在这一层中进行，不影响已经存在的层。比如在容器中删除一个1G的文件，从用户的角度看，容器中该文件已经没有了，但从文件系统的角度看，文件其实还在，只不过在顶层中标记该文件已被删除，当然这个标记为已删除的文件还会占用镜像空间。从容器构建镜像，实际上是把容器的顶层固化到镜像中。
+也就是说， 对**容器镜像**进行修改后，生成新的容器镜像，*会多一层，而且镜像的体积只会增大*，不会减小。长此以往，镜像将变得越来越臃肿。Docker提供的 export 和 import 命令可以一定程度上处理该问题，但也并不是没有缺点。
+3. **容器镜像**依赖的父镜像变化时，容器镜像必须进行*重新构建*。如果没有编写自动化构建脚本，而是手工构建的，那么又要重新修改容器的文件系统，再进行构建，这些重复劳动其实是没有价值的。
+4. **Dockerfile**镜像是*完全透明*的，所有用于构建镜像的指令都可以通过Dockerfile看到。甚至你还可以递归找到本镜像的任何父镜像的构建指令。也就是说，你可以完全了解一个镜像是如何从零开始，通过一条条指令构建出来的。
+5. **Dockerfile**镜像需要修改时，可以通过*修改Dockerfile中的指令*，再重新构建生成，没有任何问题。
+6. **Dockerfile**可以在GitHub等源码管理网站上进行托管，DockerHub自动关联源码进行构建。当你的 Dockerfile变动，或者依赖的父镜像变动，都会触发镜像的自动构建，非常方便。
+
 
 ### Dockerfile
 Docker 可以通过 Dockerfile 的内容来自动构建镜像。
 Dockerfile 是一个包含创建镜像所有命令的文本文件，通过docker build命令可以根据Dockerfile 的内容构建镜像。
 
+![](.img/dockerfile.png)
+
+- Dockerfile中的每个指令都会创建一个新的镜像层
+- 镜像层将被缓存和复用
+- 当Dockerfile的指令修改了，复制的文件变化了，或者构建镜像时指定的变量不同了，对应的镜像层缓存就会失效
+- 某一层的镜像缓存失效之后，它之后的镜像层都会失效
+- 镜像层时不可变的，如果在某一层中添加一个文件，然后再下一层中删除它，则镜像中依然会包含该文件
+
+#### 结构
+- 基础镜像信息
+- 维护者信息
+- 镜像操作指令
+- 容器启动时执行指令
 #### 指令
+
 Dockerfile 有以下指令选项:
 
-FROM
-MAINTAINER
-RUN
-CMD
-EXPOSE
-ENV
-ADD
-COPY
-ENTRYPOINT
-VOLUME
-USER
-WORKDIR
-ONBUILD
+![](.img/instruct.png)
 
-
+示例：
+<pre ><code >
+#基于centos:7的基础镜像
+FROM centos:7
+#维护镜像的用户信息
+MAINTAINER this is project
+#镜像操作指令安装apache软件
+RUN yum -y update
+RUN yum -y install httpd
+#开启80端口
+EXPOSE 80
+#复制网址首页文件
+ADD index.html /var/www/html/index.html
+#将执行脚本复制到镜像中
+ADD run.sh /run.sh
+RUN chmod 755 /run.sh
+#启动容器时执行脚本
+CMD ["/run.sh"]
+</code>
+</pre>
