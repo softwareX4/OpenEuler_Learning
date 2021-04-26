@@ -229,6 +229,22 @@ docker ps
 尝试修改yum源--失败、配置DNS--失败
 
 
+### OpenEuler 21.03 安装docker
+yum安装
+更新yum源：
+```sh
+wget -O /etc/yum.repos.d/openEulerOS.repo https://repo.huaweicloud.com/repository/conf/openeuler_x86_64.repo
+    yum clean all
+    yum makecache
+```
+安装docker
+```sh
+yum intall -y docker
+```
+查看版本
+
+![](.img/dockerv.png)
+
 
 ### docker工作过程
 > 可以简单的把image理解为可执行程序，container就是运行起来的进程。
