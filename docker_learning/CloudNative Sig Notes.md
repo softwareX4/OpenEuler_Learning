@@ -1,6 +1,7 @@
 # CloudNative Sig Notes
-[TOC]
+
 ## OpenEuler21.03安装记录
+[TOC]
 ### 安装到VMware并配置静态IP
 安装过程跟[安装openEuler 20.03 LTS SP1](../openEuler_notes.md)差不多，开机之后没有ip地址，查看<code>/etc/systemconfig/network-scripts/ens32</code>发现ONBOOOT参数是NO，且分配方式为DHCP。
 
@@ -76,45 +77,4 @@ vi /etc/yum.repos.d/openEuler_x86_64.repo
 name=openEuler
 baseurl=https://mirrors.huaweicloud.com/openeuler/openEuler-21.03/OS/x86_64/
 ```
-
-## OpenEuler 21.03 安装docker
-yum安装
-更新yum源：
-```sh
-wget -O /etc/yum.repos.d/openEulerOS.repo https://repo.huaweicloud.com/repository/conf/openeuler_x86_64.repo
-    yum clean all
-    yum makecache
-```
-安装docker
-```sh
-yum intall -y docker
-```
-查看版本
-
-![](.img/dockerv.png)
-
-
-
-## isula-build
-> 是iSula容器团队推出的容器镜像构建工具，支持通过Dockerfile文件快速构建容器镜像。
-
-根据[官方文档](https://gitee.com/openeuler/isula-build)，我使用yum方式安装，并以守护进程方式开启服务。
-
-### 构建镜像
-在/opt下，创建工作目录，编写Dockerfile：
-```sh
-mkdir my_isulad
-cd  my_isulad
-vi Dockerfile
-```
-内容如下：
-<pre lang="text">
-<code>
-FROM alpine:latest
-LABEL foo=bar
-COPY ./* /home/dir1/
-</code>
-</pre>
-
-
 
