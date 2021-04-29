@@ -99,6 +99,21 @@ yum intall -y docker
 > 是iSula容器团队推出的容器镜像构建工具，支持通过Dockerfile文件快速构建容器镜像。
 
 根据[官方文档](https://gitee.com/openeuler/isula-build)，我使用yum方式安装，并以守护进程方式开启服务。
+开启服务可能会出现Unit not found：
+
+![](.img/isula/serviceNF.png)
+
+我的原因是重复安装导致<code> /etc/systemd/system/ </code>下出现重复的以isula-build为前缀的文件，全部卸载并删除相关文件，重新安装就好了。
+
+在<code>/etc/isula-buid/</code>下配置registries.toml：镜像仓库相关配置，主要包括允许isula-build使用的镜像仓库列表和insecure仓库列表。
+```sh
+[registries.search]
+registries = ['docker.io']
+```
+要快速开始使用isula-build，只需要给它配置允许查找和拉取镜像的仓库地址，并且保证网络连通，就可以完成配置，开启容器镜像构建之旅。
+我的配置：
+
+![](.img/isula/info.png)
 
 ### 构建镜像
 在/opt下，创建工作目录，编写Dockerfile：
