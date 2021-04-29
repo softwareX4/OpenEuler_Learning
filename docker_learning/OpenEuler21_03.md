@@ -110,7 +110,7 @@ yum intall -y docker
 [registries.search]
 registries = ['docker.io']
 ```
-要快速开始使用isula-build，只需要给它配置允许查找和拉取镜像的仓库地址，并且保证网络连通，就可以完成配置，开启容器镜像构建之旅。
+要快速开始使用isula-build，只需要给它配置**允许查找和拉取镜像的仓库地址**，并且保证**网络连通**，就可以完成配置，开启容器镜像构建之旅。
 我的配置：
 
 ![](.img/isula/info.png)
@@ -120,16 +120,32 @@ registries = ['docker.io']
 ```sh
 mkdir my_isulad
 cd  my_isulad
-vi Dockerfile
 ```
-内容如下：
-<pre lang="text">
-<code>
-FROM alpine:latest
-LABEL foo=bar
-COPY ./* /home/dir1/
-</code>
-</pre>
+编写Dockerfile：
+```sh
+echo "This is bar file" > bar.txt
+cat Dockerfile_arg
+FROM busybox
+ARG foo
+ADD ${foo}.txt .
+RUN cat ${foo}.txt
+```
+构建镜像：
+```sh
+sudo isula-build ctr-img build --build-arg foo=bar -f Dockerfile_arg
+```
+
+![](.img/isula/build.png)
+
+查看镜像：
+```sh
+sudo isula-build ctr-img images
+```
+![](.img/isula/images.png)
+
+### 导入镜像
+
+![](.img/isula/imp.png)
 
 
 
