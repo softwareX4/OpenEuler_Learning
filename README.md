@@ -9,5 +9,6 @@ Notes for learning openEuler and LFS
 
   - [Docker学习笔记](./CloudNative_Sig_Notes/docker_learning/docker_notes.md)
 
-  - [OpenEuler 21.03 安装笔记](./CloudNative Sig Notes/docker_learning/OpenEuler21_03.md)
+  - [OpenEuler 21.03 安装笔记](./CloudNative_Sig_Notes/docker_learning/OpenEuler21_03.md)
   - [Kubernetes学习笔记](./CloudNative_Sig_Notes/k8s/Kubernetes_notes.md)
+
